@@ -1,0 +1,456 @@
+---
+title: "Imperfect detection - assignment"
+author: ""
+date: "2023-12-03"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+#setwd('C:/Users/johns/OneDrive/Documents/UNIVERSITY/Year 3/Computing/assignment_imperfectdetection_r/assignment') #would have to change working directory if code is run on a different computer.
+#knitr::opts_chunk$set(echo = TRUE)
+#install.packages('unmarked')
+#install.packages('AHMbook')
+library(unmarked, AHMbook)
+```
+
+
+# Question 1: Form meaningful biological hypotheses about how Opossum's occupancy and detection probabilities might vary
+
+**Key information:**
+
+ + Opossums are sensitive to temperature
+ 
+ + Opossums are generalist in terms of habitat preference
+ 
+ + Opossum activity patterns are affected by fire
+
+**Biological hypotheses:**
+
+* Hypothesis 1:
+
+   + *Opossum occupancy increases with average yearly temperature*
+
+* Hypothesis 2:
+
+   + *Opossum occupancy does not vary with habitat quality*
+
+* Hypothesis 3:
+
+   + *Opossum detection probability increases with occurrence of fire*
+   
+--------------------------------------------------------------------------------
+
+
+
+# Question 2: Prepare the data and run the models corresponding to your biological hypotheses from Q1
+
+## Prepare the data
+
+```{r}
+#Load opossum data
+
+opossum = read.csv("opossumdata.csv")
+opossum
+
+```
+
+
+```{r}
+#Separate detection history
+
+y=opossum[,2:9]
+y
+
+```
+
+```{r}
+#Organise co-variates
+
+siteCovs = data.frame(Temperature=opossum$Temperature, Habitat=opossum$Habitat)
+obsCovs = data.frame(opossum[,12:19])
+obsCovs = list(obsCovs=obsCovs)
+siteCovs
+obsCovs
+
+```
+
+```{r}
+#Organise data using UMF
+
+umf = unmarkedFrameOccu(y = y, siteCovs = siteCovs, obsCovs = obsCovs)
+summary(umf)
+
+```
+
+```{r}
+#Standardise the covariates
+
+umf@siteCovs$Temperature = scale(umf@siteCovs$Temperature)
+
+umf@siteCovs$Habitat = scale(umf@siteCovs$Habitat)
+
+umf@obsCovs$obsCovs = scale(umf@obsCovs$obsCovs)
+
+```
+
+
+
+## Create the models
+
+**Model 1**
+
+```{r}
+#Model 1 - no covariates
+
+model1 = occu(formula = ~1 ~1, data = umf)
+
+model1
+
+#backtransform results from LOGIT scale
+
+backTransform(model1, type="det") #(detection probability, p = 0.530)
+backTransform(model1, type="state") #(occupancy probability, p = 0.952)
+
+```
+
+
+**Model 2**
+
+```{r}
+#Model 2 - No detection covariate, occupancy covariate of average yearly temperature ('Temperature')
+
+model2 = occu(formula = ~1 ~Temperature, data = umf)
+
+model2
+
+#backtransform results from LOGIT scale
+
+backTransform(model2, type="det") #(detection probability, p = 0.531)
+
+lincombA1 = linearComb(model2, coefficients = c(1,0), type = "state")
+backTransform(lincombA1) #(occupancy probability (low temperature), p = 1)
+
+lincombB1 = linearComb(model2, coefficients = c(1,1), type = "state")
+backTransform(lincombB1) #(occupancy probability (high temperature), p = 1)
+```
+
+
+**Model 3**
+
+```{r}
+#Model 3 - No detection covatiate, occupancy covariate of habitat quality ('Habitat')
+
+model3 = occu(formula = ~1 ~Habitat, data = umf)
+
+model3
+
+#backtransform results from LOGIT scale
+
+backTransform(model3, type="det") #(detection probability, p = 0.531)
+
+lincombA2 = linearComb(model3, coefficients = c(1,0), type = "state")
+backTransform(lincombA2) #(occupancy probability (low habitat quality), p = 1)
+
+lincombB2 = linearComb(model3, coefficients = c(1,1), type = "state")
+backTransform(lincombB2) #(occupancy probability (high habitat quality), p = 1)
+
+```
+
+
+**Model 4**
+
+```{r}
+#Model 4 - detection covariate of occurence of fire ('obsCovs'), no occupancy covariate
+
+
+model4 = occu(formula = ~ obsCovs
+                        ~ 1,
+              data = umf)
+model4
+
+#backtransform results from LOGIT scale
+
+lincombA3 = linearComb(model4, coefficients = c(1,0), type = "det")
+backTransform(lincombA3) #(detection probability (no fire), p = 0.532)
+
+lincombB3 = linearComb(model4, coefficients = c(1,1), type = "det")
+backTransform(lincombB3) #(detection probability (fire), p = 0.584)
+
+backTransform(model4, type="state") #(occupancy probability, p = 0.952)
+
+```
+## Compare models 1, 2, 3 and 4 using AIC
+
+```{r}
+
+fit = fitList('psi(.)p(.)' = model1,
+              'psi(Temperature)p(.)' = model2,
+              'psi(Habitat)p(.)'=model3,
+              'psi(.)p(obsCovs)' = model4)
+
+modSel(fit)
+
+```
+
+
+**Q2 Conclusion Part 1**
+
+ + The best models are Models 2 and 3:
+   + Model 2 - AIC = 206.46 - No detection covariate, occupancy covariate of average yearly temperature ('Temperature')
+   + Model 3 - AIC = 207.48 - No detection covatiate, occupancy covariate of habitat quality ('Habitat')
+   
+ + Cannot determine which of Models 2 and 3 are more suitable, as they are within +/- 2 AIC of each other
+ 
+
+**Q2 Conclusion Part 2** 
+ 
+ + **Hypotheses:**
+ 
+   + Hypothesis 1 - *Opossum occupancy increases with average yearly temperature*
+     + tested by Model 2 - hypothesis **is not** supported as occupancy probability was 1 (did not vary) for both low and high average yearly temperatures.
+    
+   + Hypothesis 2 - *Opossum occupancy does not vary with habitat quality*
+     + tested by Model 3 - hypothesis **is** supported as occupany probability was 1 (did not vary) for low and high habitat quality
+     
+   + Hypothesis 3 - *Opossum detection probability increases with occurrence of fire*
+     + tested by Model 4 - hypothesis **is** supported as detection probability was 0.532 when there was no fire, but it was 0.584 (increased) when there was fire
+
+
+--------------------------------------------------------------------------------
+
+
+
+# Question 3: Interpret the obtained (back transformed) values of the estimates for occupancy and detection probability from the best ranked model(s)
+
+**The best ranked models:**
+
+ + Model 2:
+
+   + Occupancy probability was 1 for low and high average yearly temperatures. This shows that **these data** suggest that temperature (within the 13C to 42.3C range) does not influence Opossum occupation, the probability of occupation is the same (1) for all temperatures
+
+   + Detection probability was 0.531. This gives the probability of detecting an individual in each survey given that that individual does occupy the region being studied.
+   
+
+ + Model 3:
+
+   + Occupancy probability was 1 for all habitat quality. This shows that **these data** suggest that habitat quality does not influence Opossum occupation, as the probability of occupation is the same (1) for all habitat qualities
+
+   + Detection probability was 0.531. This gives the probability of detecting an individual in each survey given that that individual does occupy the region being studied.
+   
+--------------------------------------------------------------------------------
+
+# Question 4: Use the dodo data file. Add the habitat quality covariate. Build a set of single-season models to test the validity of the following hypotheses:
+### - *Dodo's occupancy probability is constant while detection probability varies with habitat quality*
+### - *Dodo's occupancy probability varies with habitat quality and detection probability varies with occurrence of flood*
+
+$~$
+$~$
+$~$
+
+**Plan** - Models to build:
+
+Model A: constant occupancy probability (~1), but detection probability has habitat quality covariate
+
+Model B: occupancy probability has habitat quality covariate and detection probability has flood covariate
+
+- Compare Model A and Model B using AIC
+
+$~$
+$~$
+$~$
+
+**Prepare Dodo data**
+
+```{r}
+# Load edited dodo data
+
+dodo_edit = read.csv("Dodo_data_edited.csv")
+dodo_edit
+
+```
+
+```{r}
+#Separate detection histories
+
+y=dodo_edit[,2:10]
+y[y>1]=1
+y
+
+```
+
+
+```{r}
+#Organise covariates
+
+siteCovs = data.frame(Habitat=dodo_edit$Habitat, Sun=dodo_edit$Sun)
+obsCovs = data.frame(dodo_edit[,13:21])
+obsCovs = list(obsCovs=obsCovs)
+siteCovs
+obsCovs
+
+```
+
+```{r}
+#Organise data using UMF
+
+dodo_umf = unmarkedFrameOccu(y=y, siteCovs=siteCovs, obsCovs=obsCovs)
+summary(dodo_umf)
+
+```
+
+```{r}
+#Standardise covariates
+
+dodo_umf@siteCovs$Habitat = scale(dodo_umf@siteCovs$Habitat)
+dodo_umf@siteCovs$Sun = scale(dodo_umf@siteCovs$Sun)
+dodo_umf@obsCovs$obsCovs = scale(dodo_umf@obsCovs$obsCovs)
+
+
+
+```
+
+$~$
+$~$
+$~$
+
+**Create models**
+
+**ModelA** - constant occupancy probability (~1), but detection probability has habitat quality covariate
+
+```{r}
+
+modelA = occu(formula = ~ Habitat 
+                        ~ 1,
+              data = dodo_umf)
+
+modelA
+
+#backtransform results from LOGIT scale
+
+lincombA4 = linearComb(modelA, coefficients = c(1,0), type = "det")
+backTransform(lincombA4) #when there is low quality habitat (detection probability, p = 0.401)
+
+lincombB4 = linearComb(modelA, coefficients = c(1,1), type = "det")
+backTransform(lincombB4) #when there is high quality habitat (detection probability, p = 0.498)
+
+backTransform(modelA, type="state") #(occupancy probability, p = 0.931)
+
+
+```
+
+
+$~$
+$~$
+$~$
+
+**Model B** - occupancy probability has habitat covariate and detection probability has flood covariate
+
+```{r}
+
+modelB = occu(formula = ~ obsCovs 
+                        ~ Habitat,
+              data = dodo_umf)
+
+modelB
+
+#backtransform results from LOGIT scale
+
+lincombA5 = linearComb(modelB, coefficients = c(1,0), type = "det")
+backTransform(lincombA5) #when there is no flood (detection probability, p =0.423)
+
+lincombB5 = linearComb(modelB, coefficients = c(1,1), type = "det")
+backTransform(lincombB5) #when there is flood (detection probability, p = 0.336)
+
+lincombC5 = linearComb(modelB, coefficients = c(1,0), type = "state")
+backTransform(lincombC5) #when there low habitat (occupation probability, p =0.942)
+
+lincombD5 = linearComb(modelB, coefficients = c(1,1), type = "state")
+backTransform(lincombD5) #when there high habitat (occupation probability, p = 0.983)
+
+
+
+```
+
+**Compare Model A and Model B's validity using AIC**
+
+```{r}
+fit = fitList('psi(.)p(Habitat)' = modelA,
+              'psi(Habitat)p(obsCovs)' = modelB)
+
+modSel(fit)
+```
+**Question 4 Conclusions:**
+
+ + AIC values:
+   + Model A - 108.98
+   + Model B - 109.50
+ + No significant difference of fit for Models A and B, as AIC scores are within +-2 of each other
+
+Model A: **Model A shows that quality of habitat increases detection probability**
+
+ + Detection Probability (low quality habitat) = 0.401
+
+ + Detection Probability (high quality habitat) = 0.498
+
+ + Occupancy Probability = 0.931
+ 
+
+Model B: **Model B shows that prescence of flood decreases detection probability and quality of habitat increases occupation probability**
+
+ 
+ + detection probability (no flood) = 0.423
+
+ + detection probability (with flood) = 0.336
+
+ + occupation probability (low habitat quality) = 0.942
+
+ + occupation probability (high habitat quality) = 0.983
+ 
+--------------------------------------------------------------------------------
+
+\newpage
+
+
+# Question 5: Build a single-season model to investigate the validity that the occurrence of flood might affect dodo's occupancy probability
+
+**Create model**
+
+Model C: detection probability covariate (~1) and occupation covariate (obsCovs)
+
+```{r}
+
+#modelC = occu(formula = ~ 1 
+#                        ~ obsCovs,
+#              data = dodo_umf)
+
+#modelC
+
+```
+
+Code chunk causes error.
+
+**Why do you get an error?**
+
+You get an error as occurrence of flood cannot be applied as an occupancy covariate, because the single-season imperfect detection model assumes that occupancy of a region does not vary within a season. So as the flood covariate varies within the season it would only influence occupancy of a site within the season, so this causes an error as it contradicts the model assumption that occupancy of a region cannot change within a season. An occurrence covariate must be constant within a site throughout the season, although it can change between sites. For example, habitat quality of a site does not change within a season, but different sites may have different habitat qualities.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
